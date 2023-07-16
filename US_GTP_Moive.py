@@ -1,6 +1,7 @@
 import os
 import re
 import asyncio
+import time
 import aiohttp
 import subprocess
 
@@ -86,7 +87,7 @@ async def download_m3u8_and_key_file(url, save_file, num):
 async def main():
     tasks = []
     save_file = "./download/"
-    for num in range(4, 8):
+    for num in range(4, 5):
         url = f"http://www.meiju996.com/play/3197-0-{num}.html"
         tasks.append(download_m3u8_and_key_file(url, save_file, num))
 
@@ -103,7 +104,9 @@ async def main():
             if file_ext in ['.key', '.ts', '.m3u8']:
                 os.remove(file_path)
 if __name__ == '__main__':
-    
+    t1 = time.time()
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.run_until_complete(main())
+    t2 = time.time()
+    print(t2 - t1)

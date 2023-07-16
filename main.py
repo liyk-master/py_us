@@ -26,7 +26,7 @@ class BuildIndex:
         self,
         client: httpx.AsyncClient,
         urls: list | tuple,
-        workers: int = 10,
+        workers: int,
     ) -> None:
 
         self.client = client
@@ -60,23 +60,23 @@ class BuildIndex:
 
     async def process_one(self):
         url = await self.todo.get()
-        # try:
-        resp = await self.crawl(url)
-        if (result := await self.parse(resp)) is not None:
-            file_dir, m3u8_url, enc_key_url = result
-            m3u8_resp = await self.crawl(m3u8_url)
-            enc_key_resp = await self.crawl(enc_key_url)
+        try:
+            resp = await self.crawl(url)
+            if (result := await self.parse(resp)) is not None:
+                file_dir, m3u8_url, enc_key_url = result
+                m3u8_resp = await self.crawl(m3u8_url)
+                enc_key_resp = await self.crawl(enc_key_url)
 
-            file_dir_path = pathlib.Path(TEMP_DIR, file_dir)
-            await self.save(file_dir_path, self.m3u8_filename, m3u8_resp.content)
-            await self.save(file_dir_path, self.enc_key_filename, enc_key_resp.content)
-            await self.update_index_queue(file_dir)
+                file_dir_path = pathlib.Path(TEMP_DIR, file_dir)
+                await self.save(file_dir_path, self.m3u8_filename, m3u8_resp.content)
+                await self.save(file_dir_path, self.enc_key_filename, enc_key_resp.content)
+                await self.update_index_queue(file_dir)
 
-        # except Exception as exc:
-        #     print(f"buildindex err!:{exc.args}")
+        except Exception as exc:
+            print(f"buildindex err!:{exc.args}")
 
-        # finally:
-        self.todo.task_done()
+        finally:
+            self.todo.task_done()
 
     async def save(self, save_path: str | pathlib.Path, save_name: str,  data: bytes):
         os.makedirs(save_path, exist_ok=True)
@@ -105,13 +105,13 @@ class Download:
         self,
         client: httpx.AsyncClient,
         task_dir_queue: asyncio.Queue,
-        workers: int = 10,
+        workers: int,
     ) -> None:
 
         self.client = client
         self.workers = workers
         self.task_lis_queue = task_dir_queue
-        self.ts_queue = asyncio.Queue(25)
+        self.ts_queue = asyncio.Queue()
 
     async def update_ts_queue(self, datas):
         for data in datas:
@@ -179,15 +179,15 @@ class Download:
             worker.cancel()
 
 
-async def main(client: httpx.AsyncClient, urls: list | tuple):
-    buildindex = BuildIndex(client, urls)
-    download = Download(client, buildindex.index_queue)
+async def main(client: httpx.AsyncClient, urls: list | tuple, workers_num=30):
+    buildindex = BuildIndex(client, urls, workers=workers_num)
+    download = Download(client, buildindex.index_queue, workers=workers_num)
     return await asyncio.create_task(asyncio.wait([download.run(), buildindex.run()]))
 
 if __name__ == '__main__':
     t1 = time.time()
     client = httpx.AsyncClient(headers=HEADER, follow_redirects=True)
-    task = main(client, urls=["http://www.meiju996.com/play/3197-0-4.html"])
+    task = main(client, urls=["http://www.meiju996.com/play/3197-0-4.html"], workers_num=50)
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.run_until_complete(task)
