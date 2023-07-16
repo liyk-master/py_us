@@ -8,46 +8,29 @@ headers = {
     "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36 Edg/94.0.992.50"
 }
 
+
 async def download_file(session, url, save_path):
-    try:
-        async with session.get(url, headers=headers) as response:
-            if response.status == 200:
-                with open(save_path, 'wb') as file:
-                    while True:
-                        chunk = await response.content.read(1024)
-                        if not chunk:
-                            break
-                        file.write(chunk)
-    except aiohttp.client_exceptions.ServerDisconnectedError:
-        async with session.get(url, headers=headers) as response:
-            if response.status == 200:
-                with open(save_path, 'wb') as file:
-                    while True:
-                        chunk = await response.content.read(1024)
-                        if not chunk:
-                            break
-                        file.write(chunk)
+    async with session.get(url, headers=headers) as response:
+        if response.status == 200:
+            with open(save_path, 'wb') as file:
+                while True:
+                    chunk = await response.content.read(1024)
+                    if not chunk:
+                        break
+                    file.write(chunk)
+
 
 async def download_video_segment(session, num, video_url, save_file):
     save_path = f"{save_file}{num}_{video_url.rsplit('/', 1)[-1]}"
-    try:
-        async with session.get(video_url, headers=headers) as response:
-            if response.status == 200:
-                with open(save_path, 'wb') as file:
-                    while True:
-                        chunk = await response.content.read(1024)
-                        if not chunk:
-                            break
-                        file.write(chunk)
-    except aiohttp.client_exceptions.ServerDisconnectedError:
-        async with session.get(video_url, headers=headers) as response:
-            if response.status == 200:
-                with open(save_path, 'wb') as file:
-                    while True:
-                        chunk = await response.content.read(1024)
-                        if not chunk:
-                            break
-                        file.write(chunk)
+    async with session.get(video_url, headers=headers) as response:
+        if response.status == 200:
+            with open(save_path, 'wb') as file:
+                while True:
+                    chunk = await response.content.read(1024)
+                    if not chunk:
+                        break
+                    file.write(chunk)
+
 
 async def download_m3u8_and_key_file(url, save_file, num):
     pattern = r'"(https?://[^"]+\.m3u8)"'
@@ -75,11 +58,14 @@ async def download_m3u8_and_key_file(url, save_file, num):
 
                 # 提取视频链接
                 video_urls = re.findall(r'^https?://[^\s]+\.ts$', m3u8_content, re.MULTILINE)
+                print(video_urls)
                 # 创建新的m3u8文件
                 base_url = video_urls[0][:video_urls[0].rindex('/') + 1]
+                print(base_url)
                 replaced_content = m3u8_content.replace(base_url, f"{num}_")
                 replaced_content = replaced_content.replace("enc.key", f"{num}.key")
                 update_m3u8 = f"{save_file}{num}_local.m3u8"
+                print(update_m3u8)
                 with open(update_m3u8, 'w') as file:
                     file.write(replaced_content)
 
@@ -96,9 +82,10 @@ async def download_m3u8_and_key_file(url, save_file, num):
                 # 执行命令行命令
                 subprocess.run(command, shell=True, stdout=subprocess.DEVNULL)
 
+
 async def main():
     tasks = []
-    save_file = "F:\\Video\\"
+    save_file = "./download/"
     for num in range(4, 8):
         url = f"http://www.meiju996.com/play/3197-0-{num}.html"
         tasks.append(download_m3u8_and_key_file(url, save_file, num))
@@ -115,6 +102,8 @@ async def main():
             # 检查文件扩展名，删除符合条件的文件
             if file_ext in ['.key', '.ts', '.m3u8']:
                 os.remove(file_path)
-
-# 运行主程序
-asyncio.run(main())
+if __name__ == '__main__':
+    
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(main())
