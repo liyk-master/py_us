@@ -4,6 +4,7 @@ import pika
 import requests
 from bs4 import BeautifulSoup
 import aiohttp, asyncio
+import US_GPT_XC_Movie as us
 
 # 定义一些常量和配置
 headers = {
@@ -58,6 +59,30 @@ async def get_herf(data_list, channel):
                 print("message：",message)
                 produce_message(channel, queue_name, message)
                 await asyncio.sleep(delay_time)
+
+async def get_herf1(data_list):
+    async with aiohttp.ClientSession(
+            headers=headers
+    ) as session:
+        tasks = []
+        for item in data_list:
+            url = item['href']
+            task = asyncio.create_task(fetch_html(session, url))
+            tasks.append(task)
+        detail_list = await asyncio.gather(*tasks)  # 使用 await 等待所有异步任务完成
+        data = []
+        for i,v in enumerate(data_list):
+            if i == 1:
+                v['detail'] = detail_list[i]
+                for va in v['detail']:
+                    message = {
+                        'title': v['title'],
+                        'detail': va,
+                    }
+                    # message = json.dumps(message)
+                    print("message：",message)
+                    data.append(message)
+        us.download_meiju_videos(data)
 
 # 定义一个同步函数，用来获取主页的数据列表
 def get_meiju():
@@ -119,17 +144,21 @@ def close_connection(connection):
     except Exception as e:
         print(f"Error in close_connection: {e}")
 
+
 # 定义主函数
 def main():
     # 创建连接和通道
-    connection, channel = create_connection_and_channel()
-    if connection and channel:
-        # 获取主页的数据列表
-        data_list = get_meiju()
-        # 处理数据列表，并发送消息到延时队列
-        asyncio.run(get_herf(data_list, channel))
-        # 关闭连接
-        close_connection(connection)
+    # connection, channel = create_connection_and_channel()
+    # if connection and channel:
+    #     # 获取主页的数据列表
+    #     data_list = get_meiju()
+    #     # 处理数据列表，并发送消息到延时队列
+    #     asyncio.run(get_herf(data_list, channel))
+    #     # 关闭连接
+    #     close_connection(connection)
+    data_list = get_meiju()
+    asyncio.run(get_herf1(data_list))
+    print(data_list)
 
 if __name__ == '__main__':
     main()
