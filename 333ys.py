@@ -3,7 +3,7 @@ import subprocess, re
 import aiofiles, aiohttp
 from pathlib import Path
 from bs4 import BeautifulSoup
-import demjson3, urllib, json, execjs, os, time
+import demjson3, urllib, json, execjs, os, time, requests
 
 headers = {
     "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36 Edg/94.0.992.50"
@@ -33,47 +33,43 @@ async def download_file(session, url, save_path):
                         await file.write(chunk)
 
 
-async def download_video_segment(session, num, video_url, save_file):
+async def download_video_segment(session, num, video_url, save_file, sem):
     save_path = f"{save_file}{num}_{video_url.rsplit('/', 1)[-1]}"
     try:
-        async with session.get(video_url, headers=headers) as response:
-            if response.status == 200:
-                async with aiofiles.open(save_path, 'wb') as file:
-                    while True:
-                        chunk = await response.content.read(1024)
-                        if not chunk:
-                            break
-                        await file.write(chunk)
+        async with sem:
+            async with session.get(video_url, headers=headers) as response:
+                if response.status == 200:
+                    async with aiofiles.open(save_path, 'wb') as file:
+                        while True:
+                            chunk = await response.content.read(1024)
+                            if not chunk:
+                                break
+                            await file.write(chunk)
     except (
             aiohttp.client_exceptions.ServerDisconnectedError, aiohttp.ClientPayloadError,
             asyncio.exceptions.TimeoutError):
-        async with session.get(video_url, headers=headers) as response:
-            if response.status == 200:
-                async with aiofiles.open(save_path, 'wb') as file:
-                    while True:
-                        chunk = await response.content.read(1024)
-                        if not chunk:
-                            break
-                        await file.write(chunk)
-
-
-async def get_iframe_content(iframe_src):
-    async with aiohttp.ClientSession() as session:
-        async with session.get(iframe_src) as response:
-            if response.status == 200:
-                return await response.text()
-            else:
-                return None
+        async with sem:
+            async with session.get(video_url, headers=headers) as response:
+                if response.status == 200:
+                    async with aiofiles.open(save_path, 'wb') as file:
+                        while True:
+                            chunk = await response.content.read(1024)
+                            if not chunk:
+                                break
+                            await file.write(chunk)
 
 
 async def download_m3u8_and_key_file(message, save_file):
-    pattern = r'"(https?://[^"]+\.m3u8)"'
     url = message.get('detail').get('href')
     num = re.sub(r"\D", "", message.get('detail').get('title'))
     title = message.get('title')
     season = message.get('season')
     detail_title = message.get('detail').get('title')
-    async with aiohttp.ClientSession() as session:
+    # 创建一个信号量，指定最大并发数
+    sem = asyncio.Semaphore(8)
+    # 设置超时时间为 2 分钟
+    timeout = aiohttp.ClientTimeout(total=120)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.get(url, headers=headers) as response:
             text = await response.text()
             pattern = r'"url":"(.*?)","url_next"'
@@ -125,12 +121,12 @@ async def download_m3u8_and_key_file(message, save_file):
                                 # 创建并发任务
                                 tasks = []
                                 for i, video_url in enumerate(video_urls):
-                                    task = download_video_segment(session, num, video_url, save_file)
+                                    task = download_video_segment(session, num, video_url, save_file, sem)
                                     tasks.append(task)
 
                                 await asyncio.gather(*tasks)
                                 print("视频下载完毕")
-                                folder_path = f"{save_file}电视剧\\韩剧\\{title}\\{season}\\"
+                                folder_path = f"{save_file}韩剧\\{title}\\{season}\\"
                                 ouput_path = f'"{folder_path}{detail_title}.mp4"'
                                 try:
                                     Path(folder_path).mkdir(parents=True, exist_ok=False)
@@ -157,17 +153,77 @@ async def download_videos(message, save_file):
     await asyncio.gather(*tasks)
 
 
+# 获取每一集的参数
+def get_every_num(uri,season,host,title_name):
+    try:
+        rep = requests.get(uri, headers=headers)
+        soup = BeautifulSoup(rep.text, 'html.parser')
+        ulBs4 = soup.find('ul', class_='myui-content__list scrollbar sort-list clearfix')
+        data_list = []
+        if ulBs4:
+            a_list = ulBs4.find_all('a', class_='btn btn-default')
+            if a_list:
+                for a in a_list:
+                    title = a.get_text()
+                    Season = f"Season {season}"
+                    # 使用正则表达式提取"第几季"
+                    # match = re.search(r'第.+?季', title)
+                    # if match:
+                    #     num_dict = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9,
+                    #                 "十": 10}
+                    #     season_string = match.group()
+                    #     match = re.search(r'[一二三四五六七八九十]+', season_string)
+                    #     num = match.group()
+                    #     if len(num) == 1:
+                    #         Season = Season + str(num_dict[num])
+                    #     if len(num) == 2:
+                    #         Season = Season + str(num_dict[num[0]] + num_dict[num[1]])
+                    #     # 将"第几季"替换为空，得到新的标题
+                    #     title = re.sub(r'第.+?季', '', title)
+                    # else:
+                    #     Season = Season + "1"
+                    href = host + a.get('href')
+                    detail = {
+                        "title": title,
+                        "href": href,
+                    }
+                    data = {
+                        "title": title_name,
+                        "detail": detail,
+                        "season": Season,
+                    }
+                    data_list.append(data)
+        return data_list
+    except Exception as e:
+        print(f"Error in get_meiju: {e}")
+        return []
+
+
 async def main():
     start = time.perf_counter()
-    save_file = "G:\\"
-    data = [
-        {'title': '丧尸宇宙', 'detail': {'title': '第01集', 'href': 'https://www.333ys.tv/vodplay/102927-3-1.html'},
-         'season': 'Season 1'},
-        {'title': '丧尸宇宙', 'detail': {'title': '第02集', 'href': 'https://www.333ys.tv/vodplay/102927-3-2.html'},
-         'season': 'Season 1'}
-    ]
+    save_file = "H:\\"
+    # 获取333ys 每一集的地址
+    data = get_every_num("https://www.333ys.tv/voddetail/101081.html",1,"https://www.333ys.tv/","绝世网红 (2023)")
+    # data = [
+    #     {'title': '步步惊心', 'detail': {'title': '第01集', 'href': 'https://www.333ys.tv/vodplay/88081-1-1.html'},
+    #      'season': 'Season 1'},
+    #     {'title': '步步惊心', 'detail': {'title': '第02集', 'href': 'https://www.333ys.tv/vodplay/88081-1-2.html'},
+    #      'season': 'Season 1'},
+    #     {'title': '步步惊心', 'detail': {'title': '第03集', 'href': 'https://www.333ys.tv/vodplay/88081-1-3.html'},
+    #      'season': 'Season 1'},
+    #     {'title': '步步惊心', 'detail': {'title': '第04集', 'href': 'https://www.333ys.tv/vodplay/88081-1-4.html'},
+    #      'season': 'Season 1'},
+    #     {'title': '步步惊心', 'detail': {'title': '第05集', 'href': 'https://www.333ys.tv/vodplay/88081-1-5.html'},
+    #      'season': 'Season 1'},
+    #     {'title': '步步惊心', 'detail': {'title': '第06集', 'href': 'https://www.333ys.tv/vodplay/88081-1-6.html'},
+    #      'season': 'Season 1'},
+    #     {'title': '步步惊心', 'detail': {'title': '第07集', 'href': 'https://www.333ys.tv/vodplay/88081-1-7.html'},
+    #      'season': 'Season 1'},
+    #     {'title': '步步惊心', 'detail': {'title': '第08集', 'href': 'https://www.333ys.tv/vodplay/88081-1-8.html'},
+    #      'season': 'Season 1'},
+    # ]
     for v in data:
-        file_name = f"{save_file}电视剧\\韩剧\\{v.get('title')}\\{v.get('season')}\\{v.get('detail').get('title')}.mp4"
+        file_name = f"{save_file}韩剧\\{v.get('title')}\\{v.get('season')}\\{v.get('detail').get('title')}.mp4"
         if os.path.exists(file_name):
             print("视频存在")
             continue
