@@ -11,6 +11,10 @@ headers = {
     "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36 Edg/94.0.992.50"
 }
 
+env = 1
+
+timeout = aiohttp.ClientTimeout(total=600)  # 将超时时间设置为600秒
+connector = aiohttp.TCPConnector(limit=50)  # 将并发数量降低
 
 async def get_proxy_list():
     proxy_list = []
@@ -77,6 +81,7 @@ async def download_m3u8_and_key_file(message, save_file):
     url = message.get('detail').get('href')
     num = re.sub(r"\D", "", message.get('detail').get('title'))
     title = message.get('title')
+    season = message.get('season')
     detail_title = message.get('detail').get('title')
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as response:
@@ -120,13 +125,17 @@ async def download_m3u8_and_key_file(message, save_file):
                 await asyncio.gather(*tasks)
 
                 print("视频下载完毕")
-                folder_path = f"{save_file}{title}\\"
+                if env == 1:
+                    folder_path = f"{save_file}美剧\\{title}\\{season}\\"
+                else:
+                    folder_path = f"{save_file}美剧/{title}/{season}/"  # linux版本
+                ouput_path = f'"{folder_path}{detail_title}.mp4"'
                 try:
                     Path(folder_path).mkdir(parents=True, exist_ok=False)
                     print("文件夹创建成功！")
-                    command = f'ffmpeg -allowed_extensions ALL -protocol_whitelist "file,http,crypto,tcp" -i {update_m3u8} -c copy {folder_path}{detail_title}.mp4'
+                    command = f'ffmpeg -allowed_extensions ALL -protocol_whitelist "file,http,crypto,tcp" -i {update_m3u8} -c copy {ouput_path}'
                 except FileExistsError:
-                    command = f'ffmpeg -allowed_extensions ALL -protocol_whitelist "file,http,crypto,tcp" -i {update_m3u8} -c copy {folder_path}{detail_title}.mp4'
+                    command = f'ffmpeg -allowed_extensions ALL -protocol_whitelist "file,http,crypto,tcp" -i {update_m3u8} -c copy {ouput_path}'
                 except Exception as e:
                     print("文件夹创建失败:", e)
 
@@ -175,24 +184,36 @@ async def download_videos(message,save_file):
     await asyncio.gather(*tasks)
 
 
-def download_meiju_videos(message):
+async def download_meiju_videos(message):
     # 记录程序开始运行的时间
     start = time.perf_counter()
+    if env == 1:
+        save_file = "G:\\"
+    else:
+        save_file = "/data/us_drama/"
+        save_file = "G:\\"
+    for v in message:
+        # 判断是否已存在
+        if env == 1:
+            file_name = f"{save_file}美剧\\{v.get('title')}\\{v.get('season')}\\{v.get('detail').get('title')}.mp4"  # win
+        else:
+            file_name = f"{save_file}美剧/{v.get('title')}/{v.get('season')}/{v.get('detail').get('title')}.mp4"  # linux
+        if os.path.exists(file_name):
+            print("视频存在")
+            continue
+        await download_videos(v,save_file)
+        await asyncio.sleep(3)
+        # 删除文件
+        parent_dir = os.path.dirname(save_file)
+        for root, dirs, files in os.walk(parent_dir):
+            for file in files:
+                file_path = os.path.join(root, file)
+                file_ext = os.path.splitext(file_path)[1]
 
-    save_file = "F:\\alist\\local\\"
-
-    asyncio.run(download_videos(message,save_file))
-
-    # 删除文件
-    parent_dir = os.path.dirname(save_file)
-    for root, dirs, files in os.walk(parent_dir):
-        for file in files:
-            file_path = os.path.join(root, file)
-            file_ext = os.path.splitext(file_path)[1]
-
-            # 检查文件扩展名，删除符合条件的文件
-            if file_ext in ['.key', '.ts', '.m3u8']:
-                os.remove(file_path)
+                # 检查文件扩展名，删除符合条件的文件
+                if file_ext in ['.key', '.ts', '.m3u8']:
+                    os.remove(file_path)
+        print("删除成功")
 
     # 记录程序结束运行的时间
     end = time.perf_counter()
@@ -203,4 +224,5 @@ def download_meiju_videos(message):
 
 
 # if __name__ == '__main__':
+#     message = [{'title': '好兆头', 'href': 'http://www.meiju996.com/j/50131.html', 'season': 'Season 2'}, {'title': '劫机七小时', 'href': 'http://www.meiju996.com/j/50091.html', 'season': 'Season 1'}, {'title': '战士', 'href': 'http://www.meiju996.com/j/50094.html', 'season': 'Season 3'}, {'title': '猎魔人', 'href': 'http://www.meiju996.com/j/50093.html', 'season': 'Season 3'}, {'title': '秘密入侵', 'href': 'http://www.meiju996.com/j/50076.html', 'season': 'Season 1'}, {'title': '行尸走肉：死亡之城', 'href': 'http://www.meiju996.com/j/50069.html', 'season': 'Season 1'}, {'title': '戴洛奇小镇', 'href': 'http://www.meiju996.com/j/50044.html', 'season': 'Season 1'}, {'title': '罪恶黑名单', 'href': 'http://www.meiju996.com/j/49864.html', 'season': 'Season 10'}, {'title': '特别行动母狮', 'href': 'http://www.meiju996.com/j/50128.html', 'season': 'Season 1'}, {'title': '风骚女子', 'href': 'http://www.meiju996.com/j/50124.html', 'season': 'Season 2'}, {'title': '基地', 'href': 'http://www.meiju996.com/j/50115.html', 'season': 'Season 2'}, {'title': '就这样', 'href': 'http://www.meiju996.com/j/50081.html', 'season': 'Season 2'}]
 #     download_meiju_videos(message)
