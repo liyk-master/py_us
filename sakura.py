@@ -161,7 +161,7 @@ async def download_m3u8_and_key_file(message, save_file):
 
                         await asyncio.gather(*tasks)
                         print("视频下载完毕")
-                        folder_path = f"{save_file}日本动漫\\{title}\\{season}\\"
+                        folder_path = f"{save_file}动漫-日本\\{title}\\{season}\\"
                         ouput_path = f'"{folder_path}{detail_title}.mp4"'
                         try:
                             Path(folder_path).mkdir(parents=True, exist_ok=False)
@@ -281,7 +281,7 @@ async def main():
     start = time.perf_counter()
     url = "http://www.yinghuavideo.com/ribendongman/"
     url = "http://www.yinghuavideo.com/search/%E7%A7%9F%E5%80%9F%E5%A5%B3%E5%8F%8B/"
-    save_file = "F:\\迅雷下载\\video\\Movie\\樱花动漫\\"
+    save_file = "H:\\"
     # 爬取樱花中好看的日本动漫
     data_list = get_every_num(url, 'lpic')  # imgs 好看的 lpic 搜索的
     data = await get_herf1(data_list)
@@ -293,7 +293,7 @@ async def main():
     # ]
     for v in data:
         title = (v.get('title')).strip()
-        file_name = f"{save_file}日本动漫\\{title}\\{v.get('season')}\\{v.get('detail').get('title')}.mp4"
+        file_name = f"{save_file}动漫-日本\\{title}\\{v.get('season')}\\{v.get('detail').get('title')}.mp4"
         if os.path.exists(file_name):
             print("视频存在")
             continue
