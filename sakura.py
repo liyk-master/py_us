@@ -178,12 +178,12 @@ async def download_m3u8_and_key_file(message, save_file):
                         print("Config object not found")
 
 
-def get_every_num(uri):
+def get_every_num(uri, class_name):
     try:
         rep = requests.get(uri, headers=headers)
         rep.encoding = "utf-8"
         soup = BeautifulSoup(rep.text, 'html.parser')
-        divBs4 = soup.find('div', class_="imgs")
+        divBs4 = soup.find('div', class_=class_name)
         ulBs4 = divBs4.find('ul')
         data_list = []
         if ulBs4:
@@ -280,9 +280,10 @@ async def download_videos(message, save_file):
 async def main():
     start = time.perf_counter()
     url = "http://www.yinghuavideo.com/ribendongman/"
+    url = "http://www.yinghuavideo.com/search/%E7%A7%9F%E5%80%9F%E5%A5%B3%E5%8F%8B/"
     save_file = "F:\\迅雷下载\\video\\Movie\\樱花动漫\\"
     # 爬取樱花中好看的日本动漫
-    data_list = get_every_num(url)
+    data_list = get_every_num(url, 'lpic')  # imgs 好看的 lpic 搜索的
     data = await get_herf1(data_list)
     # data = [
     #     {'title': '丧尸宇宙', 'detail': {'title': '第01集', 'href': 'https://www.333ys.tv/vodplay/102927-3-1.html'},
