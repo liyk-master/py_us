@@ -3,6 +3,7 @@ import asyncio, aiofiles, aiohttp
 from bs4 import BeautifulSoup
 import requests, re, subprocess
 from pathlib import Path
+from urllib.parse import urlparse
 
 headers = {
     "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36 Edg/94.0.992.50"
@@ -91,12 +92,21 @@ async def download_m3u8_and_key_file(message, save_file):
             divBs4 = soup.find('div', id="playbox")
             if divBs4:
                 url_content = divBs4.get('data-vid')
-                url = url_content.replace("$mp4", "")
+                pattern = r"http.*?\.m3u8"
+                match = re.search(pattern, url_content)
+                if match:
+                    url = match.group()
+                else:
+                    print("未找到m3u8文件，建议查看")
+                    exit()
+                # url = url_content.replace("$mp4", "")
                 flag = False
-                if "cdn" in url_content:
+                if "cdn" in url_content or "vip" in url_content:
                     flag = True
                     uri = url.replace("index.m3u8", "")
                 else:
+                    # parsed_url = urlparse(url)
+                    # uri = parsed_url.netloc
                     uri = "https://s9.fsvod1.com"
                 # url = f"https://tup.yinghuavideo.com/?vid={url_content}"
                 headers = {
@@ -129,7 +139,10 @@ async def download_m3u8_and_key_file(message, save_file):
                         last_line = match.group(1)
                         m3u8_url = uri + last_line
                         print('m3u8_url', m3u8_url)  # 打印结果
-                        uri2 = m3u8_url.replace("index.m3u8", "")
+                        parsed_url = urlparse(m3u8_url)
+                        path = parsed_url.path
+                        filename = os.path.basename(path)
+                        uri2 = m3u8_url.replace(filename, "")
                         # 下载m3u8
                         m3u8_save_path = f"{save_file}{num}.m3u8"
                         await download_file(session, m3u8_url, m3u8_save_path, headers)
@@ -241,6 +254,7 @@ async def fetch_html(session, url):
                     })
         return detail_list
     except Exception as e:
+        print("url：",url)
         print(f"Error in fetch_html: {e}")
         return []
 
@@ -279,8 +293,8 @@ async def download_videos(message, save_file):
 
 async def main():
     start = time.perf_counter()
-    url = "http://www.yinghuavideo.com/ribendongman/"
-    url = "http://www.yinghuavideo.com/search/%E7%A7%9F%E5%80%9F%E5%A5%B3%E5%8F%8B/"
+    # url = "http://www.yinghuavideo.com/ribendongman/"
+    url = "http://www.yinghuavideo.com/search/%E6%96%87%E8%B1%AA%E9%87%8E%E7%8A%AC/"
     save_file = "H:\\"
     # 爬取樱花中好看的日本动漫
     data_list = get_every_num(url, 'lpic')  # imgs 好看的 lpic 搜索的
@@ -297,7 +311,7 @@ async def main():
         if os.path.exists(file_name):
             print("视频存在")
             continue
-        if title == "假面骑士GEATS" or title == "海贼王":
+        if title == "假面骑士GEATS" or title == "海贼王" or title == "文豪野犬 汪！":
             print("太长跳过")
             continue
         await download_videos(v, save_file)
