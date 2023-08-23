@@ -60,135 +60,151 @@ async def download_video_segment(session, num, video_url, save_file, sem):
 
 
 async def download_m3u8_and_key_file(message, save_file):
-    url = message.get('detail').get('href')
-    num = re.sub(r"\D", "", message.get('detail').get('title'))
-    title = message.get('title')
-    title = title.strip()
-    season = message.get('season')
-    detail_title = message.get('detail').get('title')
-    # 创建一个信号量，指定最大并发数
-    sem = asyncio.Semaphore(8)
-    # 设置超时时间为 2 分钟
-    timeout = aiohttp.ClientTimeout(total=120)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        headers = {
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            'Accept-Encoding': 'gzip, deflate',
-            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
-            # 'Content-Length': '35',
-            # 'Content-Type': 'application/x-www-form-urlencoded',
-            'Cookie': '__51vcke__K63hAtUOftqyOSHq=45b1344e-daef-558a-beb3-4f8a0446166e; __51vuft__K63hAtUOftqyOSHq=1691848532135; qike123=%u80FD%u5E72%u7684%u732B%u4ECA%u5929%u4E5F%u5FE7%u90C101^http%3A//www.yinghuavideo.com/v/5954-1.html_$_%u80FD%u5E72%u7684%u732B%u4ECA%u5929%u4E5F%u5FE7%u90C106^http%3A//www.yinghuavideo.com/v/5954-6.html_$_%u80FD%u5E72%u7684%u732B%u4ECA%u5929%u4E5F%u5FE7%u90C105^http%3A//www.yinghuavideo.com/v/5954-5.html_$_|; __51uvsct__K63hAtUOftqyOSHq=5; __vtins__K63hAtUOftqyOSHq=%7B%22sid%22%3A%20%2283c50d13-3541-56b9-a7b9-dc2139940132%22%2C%20%22vd%22%3A%202%2C%20%22stt%22%3A%204535%2C%20%22dr%22%3A%204535%2C%20%22expires%22%3A%201691909367311%2C%20%22ct%22%3A%201691907567311%7D',
-            'Host': 'www.yinghuavideo.com',
-            'Pragma': 'no-cache',
-            'Referer': 'http://www.yinghuavideo.com/v/5954-6.html',
-            'Upgrade-Insecure-Requests': '1',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
-        }
-        async with session.get(url, headers=headers) as response:
-            text = await response.text()
-            soup = BeautifulSoup(text, 'html.parser')
-            divBs4 = soup.find('div', id="playbox")
-            if divBs4:
-                url_content = divBs4.get('data-vid')
-                pattern = r"http.*?\.m3u8"
-                match = re.search(pattern, url_content)
-                if match:
-                    url = match.group()
-                else:
-                    print("未找到m3u8文件，建议查看")
-                    exit()
-                # url = url_content.replace("$mp4", "")
-                flag = False
-                if "cdn" in url_content or "vip" in url_content:
-                    flag = True
-                    uri = url.replace("index.m3u8", "")
-                else:
-                    # parsed_url = urlparse(url)
-                    # uri = parsed_url.netloc
-                    uri = "https://s9.fsvod1.com"
-                # url = f"https://tup.yinghuavideo.com/?vid={url_content}"
-                headers = {
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                    'Accept-Encoding': 'gzip, deflate, br',
-                    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-                    'Cache-Control': 'no-cache',
-                    'Connection': 'keep-alive',
-                    'Sec-Ch-Ua': '"Not/A)Brand";v="99", "Google Chrome";v="115", "Chromium";v="115"',
-                    'Sec-Ch-Ua-Mobile': '?0',
-                    'Sec-Ch-Ua-Platform': 'Windows',
-                    'Sec-Fetch-Dest': 'document',
-                    'Sec-Fetch-Mode': 'navigate',
-                    'Sec-Fetch-Site': 'none',
-                    'Sec-Fetch-User': '?1',
-                    # 'Content-Type': 'application/x-www-form-urlencoded',
-                    # 'Cookie': '__51vcke__K63hAtUOftqyOSHq=45b1344e-daef-558a-beb3-4f8a0446166e; __51vuft__K63hAtUOftqyOSHq=1691848532135; __51uvsct__K63hAtUOftqyOSHq=2; qike123=%u80FD%u5E72%u7684%u732B%u4ECA%u5929%u4E5F%u5FE7%u90C101^http%3A//www.yinghuavideo.com/v/5954-1.html_$_%u80FD%u5E72%u7684%u732B%u4ECA%u5929%u4E5F%u5FE7%u90C106^http%3A//www.yinghuavideo.com/v/5954-6.html_$_|; __vtins__K63hAtUOftqyOSHq=%7B%22sid%22%3A%20%22bf7a2c71-0114-5b31-bece-4652303711c7%22%2C%20%22vd%22%3A%2010%2C%20%22stt%22%3A%203502201%2C%20%22dr%22%3A%206187%2C%20%22expires%22%3A%201691855999999%2C%20%22ct%22%3A%201691855530675%7D',
-                    # 'Host': 'www.yinghuavideo.com',
-                    'Pragma': 'no-cache',
-                    # 'Referer': 'http://www.yinghuavideo.com/v/5954-6.html',
-                    'Upgrade-Insecure-Requests': '1',
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
-                }
-                async with session.get(url, headers=headers) as response:
-                    # 获取到请求参数
-                    text = await response.text()
-                    pattern = r'^.*\n(.*\.m3u8)$'
-                    match = re.search(pattern, text, re.MULTILINE)
+    try:
+        url = message.get('detail').get('href')
+        num = re.sub(r"\D", "", message.get('detail').get('title'))
+        title = message.get('title')
+        title = title.strip()
+        season = message.get('season')
+        detail_title = message.get('detail').get('title')
+        # 创建一个信号量，指定最大并发数
+        sem = asyncio.Semaphore(8)
+        # 设置超时时间为 2 分钟
+        timeout = aiohttp.ClientTimeout(total=120)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            headers = {
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Encoding': 'gzip, deflate',
+                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                # 'Content-Length': '35',
+                # 'Content-Type': 'application/x-www-form-urlencoded',
+                'Cookie': '__51vcke__K63hAtUOftqyOSHq=45b1344e-daef-558a-beb3-4f8a0446166e; __51vuft__K63hAtUOftqyOSHq=1691848532135; qike123=%u80FD%u5E72%u7684%u732B%u4ECA%u5929%u4E5F%u5FE7%u90C101^http%3A//www.yinghuavideo.com/v/5954-1.html_$_%u80FD%u5E72%u7684%u732B%u4ECA%u5929%u4E5F%u5FE7%u90C106^http%3A//www.yinghuavideo.com/v/5954-6.html_$_%u80FD%u5E72%u7684%u732B%u4ECA%u5929%u4E5F%u5FE7%u90C105^http%3A//www.yinghuavideo.com/v/5954-5.html_$_|; __51uvsct__K63hAtUOftqyOSHq=5; __vtins__K63hAtUOftqyOSHq=%7B%22sid%22%3A%20%2283c50d13-3541-56b9-a7b9-dc2139940132%22%2C%20%22vd%22%3A%202%2C%20%22stt%22%3A%204535%2C%20%22dr%22%3A%204535%2C%20%22expires%22%3A%201691909367311%2C%20%22ct%22%3A%201691907567311%7D',
+                'Host': 'www.yinghuavideo.com',
+                'Pragma': 'no-cache',
+                'Referer': 'http://www.yinghuavideo.com/v/5954-6.html',
+                'Upgrade-Insecure-Requests': '1',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
+            }
+            async with session.get(url, headers=headers) as response:
+                text = await response.text()
+                soup = BeautifulSoup(text, 'html.parser')
+                divBs4 = soup.find('div', id="playbox")
+                if divBs4:
+                    url_content = divBs4.get('data-vid')
+                    pattern = r"http.*?\.m3u8"
+                    match = re.search(pattern, url_content)
                     if match:
-                        last_line = match.group(1)
-                        m3u8_url = uri + last_line
-                        print('m3u8_url', m3u8_url)  # 打印结果
-                        parsed_url = urlparse(m3u8_url)
-                        path = parsed_url.path
-                        filename = os.path.basename(path)
-                        uri2 = m3u8_url.replace(filename, "")
-                        # 下载m3u8
-                        m3u8_save_path = f"{save_file}{num}.m3u8"
-                        await download_file(session, m3u8_url, m3u8_save_path, headers)
-                        print("m3u8下载完毕")
-                        async with aiofiles.open(m3u8_save_path, 'r') as file:
-                            m3u8_content = await file.read()
-                        pattern = r'^.*\n(.*\.ts)$'
-                        video_urls = re.findall(pattern, m3u8_content, re.MULTILINE)
-                        print("url", uri)
-                        print("video_url：", video_urls[0])
-                        if flag:
-                            replaced_content = m3u8_content
-                            for i, v in enumerate(video_urls):
-                                replaced_content = replaced_content.replace(v, f"{save_file}{num}_{v}")
-                                video_urls[i] = uri2 + v
-                        else:
-                            base_url = video_urls[0][:video_urls[0].rindex('/') + 1]
-                            replaced_content = m3u8_content.replace(base_url, f"{save_file}{num}_")
-                            for i, v in enumerate(video_urls):
-                                video_urls[i] = "https://s9.fsvod1.com" + v
-                        # 替换m3u8文件
-                        async with aiofiles.open(m3u8_save_path, 'w', encoding='utf-8') as file:
-                            await file.write(replaced_content)
-                        # 创建并发任务
-                        tasks = []
-                        for i, video_url in enumerate(video_urls):
-                            task = download_video_segment(session, num, video_url, save_file, sem)
-                            tasks.append(task)
-
-                        await asyncio.gather(*tasks)
-                        print("视频下载完毕")
-                        folder_path = f"{save_file}动漫-日本\\{title}\\{season}\\"
-                        ouput_path = f'"{folder_path}{detail_title}.mp4"'
-                        try:
-                            Path(folder_path).mkdir(parents=True, exist_ok=False)
-                            print("文件夹创建成功！")
-                            command = f'ffmpeg -allowed_extensions ALL -protocol_whitelist "file,http,crypto,tcp" -i {m3u8_save_path} -c copy {ouput_path}'
-                        except FileExistsError:
-                            command = f'ffmpeg -allowed_extensions ALL -protocol_whitelist "file,http,crypto,tcp" -i {m3u8_save_path} -c copy {ouput_path}'
-                        except Exception as e:
-                            print("文件夹创建失败:", e)
-
-                        # 执行命令行命令
-                        subprocess.run(command, shell=True, stdout=subprocess.DEVNULL)
+                        url = match.group()
                     else:
-                        print("Config object not found")
+                        print("url", url)
+                        print("未找到m3u8文件，建议查看")
+                        return
+                    # url = url_content.replace("$mp4", "")
+                    flag = False
+                    if "cdn" in url_content or "vip" in url_content:
+                        flag = True
+                        uri = url.replace("index.m3u8", "")
+                    else:
+                        parsed_url = urlparse(url)
+                        uri = "https://" + parsed_url.netloc
+                        # uri = "https://s9.fsvod1.com"
+                    # url = f"https://tup.yinghuavideo.com/?vid={url_content}"
+                    headers = {
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                        'Accept-Encoding': 'gzip, deflate, br',
+                        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                        'Cache-Control': 'no-cache',
+                        'Connection': 'keep-alive',
+                        'Sec-Ch-Ua': '"Not/A)Brand";v="99", "Google Chrome";v="115", "Chromium";v="115"',
+                        'Sec-Ch-Ua-Mobile': '?0',
+                        'Sec-Ch-Ua-Platform': 'Windows',
+                        'Sec-Fetch-Dest': 'document',
+                        'Sec-Fetch-Mode': 'navigate',
+                        'Sec-Fetch-Site': 'none',
+                        'Sec-Fetch-User': '?1',
+                        # 'Content-Type': 'application/x-www-form-urlencoded',
+                        # 'Cookie': '__51vcke__K63hAtUOftqyOSHq=45b1344e-daef-558a-beb3-4f8a0446166e; __51vuft__K63hAtUOftqyOSHq=1691848532135; __51uvsct__K63hAtUOftqyOSHq=2; qike123=%u80FD%u5E72%u7684%u732B%u4ECA%u5929%u4E5F%u5FE7%u90C101^http%3A//www.yinghuavideo.com/v/5954-1.html_$_%u80FD%u5E72%u7684%u732B%u4ECA%u5929%u4E5F%u5FE7%u90C106^http%3A//www.yinghuavideo.com/v/5954-6.html_$_|; __vtins__K63hAtUOftqyOSHq=%7B%22sid%22%3A%20%22bf7a2c71-0114-5b31-bece-4652303711c7%22%2C%20%22vd%22%3A%2010%2C%20%22stt%22%3A%203502201%2C%20%22dr%22%3A%206187%2C%20%22expires%22%3A%201691855999999%2C%20%22ct%22%3A%201691855530675%7D',
+                        # 'Host': 'www.yinghuavideo.com',
+                        'Pragma': 'no-cache',
+                        # 'Referer': 'http://www.yinghuavideo.com/v/5954-6.html',
+                        'Upgrade-Insecure-Requests': '1',
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
+                    }
+                    async with session.get(url, headers=headers) as response:
+                        # 获取到请求参数
+                        text = await response.text()
+                        pattern = r'^.*\n(.*\.m3u8)$'
+                        match = re.search(pattern, text, re.MULTILINE)
+                        if match:
+                            last_line = match.group(1)
+                            m3u8_url = uri + last_line
+                            print('m3u8_url', m3u8_url)  # 打印结果
+                            parsed_url = urlparse(m3u8_url)
+                            path = parsed_url.path
+                            filename = os.path.basename(path)
+                            uri2 = m3u8_url.replace(filename, "")
+                            # 下载m3u8
+                            m3u8_save_path = f"{save_file}{num}.m3u8"
+                            await download_file(session, m3u8_url, m3u8_save_path, headers)
+                            print("m3u8下载完毕")
+                            async with aiofiles.open(m3u8_save_path, 'r') as file:
+                                m3u8_content = await file.read()
+                                # 判断m3u8文件中是否有key
+                                pattern = r"\/.*?\.key"
+                                matches = re.findall(pattern, m3u8_content)
+                                if matches:
+                                    key_url = uri + matches[0]
+                                    key_save_path = f"{save_file}{num}.key"
+                                    await download_file(session, key_url, key_save_path, headers)
+                                    print("key下载完毕")
+                                    # 替换key文件
+                                    key_save_path = key_save_path.replace("\\", "\\\\")  # 将单反斜杠替换为双反斜杠
+                                    m3u8_content = m3u8_content.replace(matches[0], key_save_path)
+                            pattern = r'^.*\n(.*\.ts)$'
+                            video_urls = re.findall(pattern, m3u8_content, re.MULTILINE)
+                            print("url", uri)
+                            print("video_url：", video_urls[0])
+                            if flag:
+                                replaced_content = m3u8_content
+                                for i, v in enumerate(video_urls):
+                                    replaced_content = replaced_content.replace(v, f"{save_file}{num}_{v}")
+                                    video_urls[i] = uri2 + v
+                            else:
+                                base_url = video_urls[0][:video_urls[0].rindex('/') + 1]
+                                replaced_content = m3u8_content.replace(base_url, f"{save_file}{num}_")
+                                for i, v in enumerate(video_urls):
+                                    video_urls[i] = uri + v
+                            # 替换m3u8文件
+                            async with aiofiles.open(m3u8_save_path, 'w', encoding='utf-8') as file:
+                                await file.write(replaced_content)
+                            # 创建并发任务
+                            tasks = []
+                            for i, video_url in enumerate(video_urls):
+                                task = download_video_segment(session, num, video_url, save_file, sem)
+                                tasks.append(task)
+
+                            await asyncio.gather(*tasks)
+                            print("视频下载完毕")
+                            folder_path = f"{save_file}动漫-大陆\\{title}\\{season}\\"
+                            ouput_path = f'"{folder_path}{detail_title}.mp4"'
+                            try:
+                                Path(folder_path).mkdir(parents=True, exist_ok=False)
+                                print("文件夹创建成功！")
+                                command = f'ffmpeg -allowed_extensions ALL -protocol_whitelist "file,http,crypto,tcp" -i {m3u8_save_path} -c copy {ouput_path}'
+                            except FileExistsError:
+                                command = f'ffmpeg -allowed_extensions ALL -protocol_whitelist "file,http,crypto,tcp" -i {m3u8_save_path} -c copy {ouput_path}'
+                            except Exception as e:
+                                print("文件夹创建失败:", e)
+
+                            # 执行命令行命令
+                            subprocess.run(command, shell=True, stdout=subprocess.DEVNULL)
+                        else:
+                            print("Config object not found")
+    except Exception as e:
+        print(f"download_m3u8_and_key_file Error in: {e}")
+        print("message", message)
 
 
 def get_every_num(uri, class_name):
@@ -231,7 +247,7 @@ def get_every_num(uri, class_name):
                     data_list.append(data)
         return data_list
     except Exception as e:
-        print(f"Error in: {e}")
+        print(f"get_every_num Error in: {e}")
         return []
 
 
@@ -254,7 +270,7 @@ async def fetch_html(session, url):
                     })
         return detail_list
     except Exception as e:
-        print("url：",url)
+        print("url：", url)
         print(f"Error in fetch_html: {e}")
         return []
 
@@ -293,11 +309,12 @@ async def download_videos(message, save_file):
 
 async def main():
     start = time.perf_counter()
-    # url = "http://www.yinghuavideo.com/ribendongman/"
-    url = "http://www.yinghuavideo.com/search/%E6%96%87%E8%B1%AA%E9%87%8E%E7%8A%AC/"
+    url = "http://www.yinghuavideo.com/guochandongman/"
+    # url = "http://www.yinghuavideo.com/search/%E6%AD%BB%E7%A5%9E%E5%B0%91%E7%88%B7%E4%B8%8E%E9%BB%91%E5%A5%B3%E4%BB%86/"
     save_file = "H:\\"
+    temp_save_file = "H:\\"
     # 爬取樱花中好看的日本动漫
-    data_list = get_every_num(url, 'lpic')  # imgs 好看的 lpic 搜索的
+    data_list = get_every_num(url, 'imgs')  # imgs 好看的 lpic 搜索的
     data = await get_herf1(data_list)
     # data = [
     #     {'title': '丧尸宇宙', 'detail': {'title': '第01集', 'href': 'https://www.333ys.tv/vodplay/102927-3-1.html'},
@@ -307,7 +324,7 @@ async def main():
     # ]
     for v in data:
         title = (v.get('title')).strip()
-        file_name = f"{save_file}动漫-日本\\{title}\\{v.get('season')}\\{v.get('detail').get('title')}.mp4"
+        file_name = f"{save_file}动漫-大陆\\{title}\\{v.get('season')}\\{v.get('detail').get('title')}.mp4"
         if os.path.exists(file_name):
             print("视频存在")
             continue
@@ -334,7 +351,6 @@ async def main():
     # 计算程序运行时间
     elapsed = end - start
     print(f"程序运行时间为{elapsed}秒")
-
 
 # 使用 asyncio.run() 来运行异步函数
 asyncio.run(main())
