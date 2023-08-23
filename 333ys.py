@@ -48,6 +48,7 @@ async def download_video_segment(session, num, video_url, save_file, sem):
     except (
             aiohttp.client_exceptions.ServerDisconnectedError, aiohttp.ClientPayloadError,
             asyncio.exceptions.TimeoutError):
+
         async with sem:
             async with session.get(video_url, headers=headers) as response:
                 if response.status == 200:
@@ -59,7 +60,7 @@ async def download_video_segment(session, num, video_url, save_file, sem):
                             await file.write(chunk)
 
 
-async def download_m3u8_and_key_file(message, save_file):
+async def download_m3u8_and_key_file(message, save_file, temp_save_file):
     url = message.get('detail').get('href')
     num = re.sub(r"\D", "", message.get('detail').get('title'))
     title = message.get('title')
@@ -104,7 +105,7 @@ async def download_m3u8_and_key_file(message, save_file):
                                 m3u8_url = context.call("getVideoInfo", data['url'])  # 调用JS函数，传入参数
                                 print('m3u8_url', m3u8_url)  # 打印结果
                                 # 下载m3u8
-                                m3u8_save_path = f"{save_file}{num}.m3u8"
+                                m3u8_save_path = f"{temp_save_file}{num}.m3u8"
                                 await download_file(session, m3u8_url, m3u8_save_path)
                                 print("m3u8下载完毕")
 
@@ -114,19 +115,19 @@ async def download_m3u8_and_key_file(message, save_file):
                                 video_urls = re.findall(r'^https?://[^\s]+\.ts$', m3u8_content, re.MULTILINE)
                                 # 创建新的m3u8文件
                                 base_url = video_urls[0][:video_urls[0].rindex('/') + 1]
-                                replaced_content = m3u8_content.replace(base_url, f"{save_file}{num}_")
-                                update_m3u8 = f"{save_file}{num}_local.m3u8"
+                                replaced_content = m3u8_content.replace(base_url, f"{temp_save_file}{num}_")
+                                update_m3u8 = f"{temp_save_file}{num}_local.m3u8"
                                 async with aiofiles.open(update_m3u8, 'w') as file:
                                     await file.write(replaced_content)
                                 # 创建并发任务
                                 tasks = []
                                 for i, video_url in enumerate(video_urls):
-                                    task = download_video_segment(session, num, video_url, save_file, sem)
+                                    task = download_video_segment(session, num, video_url, temp_save_file, sem)
                                     tasks.append(task)
 
                                 await asyncio.gather(*tasks)
                                 print("视频下载完毕")
-                                folder_path = f"{save_file}韩剧\\{title}\\{season}\\"
+                                folder_path = f"{save_file}\\{title}\\{season}\\"
                                 ouput_path = f'"{folder_path}{detail_title}.mp4"'
                                 try:
                                     Path(folder_path).mkdir(parents=True, exist_ok=False)
@@ -145,16 +146,16 @@ async def download_m3u8_and_key_file(message, save_file):
                         print("Config object not found")
 
 
-async def download_videos(message, save_file):
+async def download_videos(message, save_file, temp_save_file):
     tasks = []
-    task = download_m3u8_and_key_file(message, save_file)
+    task = download_m3u8_and_key_file(message, save_file, temp_save_file)
     tasks.append(task)
 
     await asyncio.gather(*tasks)
 
 
 # 获取每一集的参数
-def get_every_num(uri,season,host,title_name):
+def get_every_num(uri, season, host, title_name):
     try:
         rep = requests.get(uri, headers=headers)
         soup = BeautifulSoup(rep.text, 'html.parser')
@@ -201,9 +202,14 @@ def get_every_num(uri,season,host,title_name):
 
 async def main():
     start = time.perf_counter()
-    save_file = "H:\\"
+    print("请输入要存储的路径：")
+    save_file = input()
+    print("请输入m3u8等文件临时路径：")
+    # save_file = "H:\\"
+    # temp_save_file = "G:\\"
+    temp_save_file = input()
     # 获取333ys 每一集的地址
-    data = get_every_num("https://www.333ys.tv/voddetail/101081.html",1,"https://www.333ys.tv/","绝世网红 (2023)")
+    data = get_every_num("https://www.333ys.tv/voddetail/6121.html", 1, "https://www.333ys.tv/", "人民的名义 (2017)")
     # data = [
     #     {'title': '步步惊心', 'detail': {'title': '第01集', 'href': 'https://www.333ys.tv/vodplay/88081-1-1.html'},
     #      'season': 'Season 1'},
@@ -223,14 +229,14 @@ async def main():
     #      'season': 'Season 1'},
     # ]
     for v in data:
-        file_name = f"{save_file}韩剧\\{v.get('title')}\\{v.get('season')}\\{v.get('detail').get('title')}.mp4"
+        file_name = f"{save_file}\\{v.get('title')}\\{v.get('season')}\\{v.get('detail').get('title')}.mp4"
         if os.path.exists(file_name):
             print("视频存在")
             continue
-        await download_videos(v, save_file)
+        await download_videos(v, save_file, temp_save_file)
         await asyncio.sleep(3)
         # 删除文件
-        parent_dir = os.path.dirname(save_file)
+        parent_dir = os.path.dirname(temp_save_file)
         for root, dirs, files in os.walk(parent_dir):
             for file in files:
                 file_path = os.path.join(root, file)
