@@ -1,13 +1,30 @@
 import time, os
 import asyncio, aiofiles, aiohttp
 from bs4 import BeautifulSoup
-import requests, re, subprocess
+import requests, re, subprocess, random, redis
 from pathlib import Path
 from urllib.parse import urlparse
 
 headers = {
     "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36 Edg/94.0.992.50"
 }
+
+redis_client = redis.Redis(host='localhost', port=6379, db=0)
+
+
+async def get_proxy():
+    proxy_list = []
+    # 获取列表中的所有元素
+    members = redis_client.lrange('ip_ports', 0, -1)
+    # 打印元素列表
+    for member in members:
+        proxy_list.append(member.decode())
+    proxy = random.choice(proxy_list)
+    return proxy
+
+def delete_proxy(proxy):
+    # 从列表中移除指定元素
+    redis_client.lrem('ip_ports', count=0, value=proxy)
 
 
 async def download_file(session, url, save_path, headers):
@@ -35,21 +52,28 @@ async def download_file(session, url, save_path, headers):
 
 async def download_video_segment(session, num, video_url, save_file, sem):
     save_path = f"{save_file}{num}_{video_url.rsplit('/', 1)[-1]}"
+    retry_count = 5
     try:
         async with sem:
-            async with session.get(video_url, headers=headers) as response:
-                if response.status == 200:
-                    async with aiofiles.open(save_path, 'wb') as file:
-                        while True:
-                            chunk = await response.content.read(1024)
-                            if not chunk:
-                                break
-                            await file.write(chunk)
+            try:
+                while retry_count > 0:
+                    proxy = await get_proxy()
+                    async with session.get(video_url, headers=headers, proxy="http://{}".format(proxy)) as response:
+                        if response.status == 200:
+                            async with aiofiles.open(save_path, 'wb') as file:
+                                while True:
+                                    chunk = await response.content.read(1024)
+                                    if not chunk:
+                                        break
+                                    await file.write(chunk)
+                    break
+            except:
+                retry_count -= 1
     except (
             aiohttp.client_exceptions.ServerDisconnectedError, aiohttp.ClientPayloadError,
             asyncio.exceptions.TimeoutError):
         async with sem:
-            async with session.get(video_url, headers=headers) as response:
+            async with session.get(video_url, headers=headers, proxy="http://{}".format(proxy)) as response:
                 if response.status == 200:
                     async with aiofiles.open(save_path, 'wb') as file:
                         while True:
@@ -71,7 +95,9 @@ async def download_m3u8_and_key_file(message, save_file):
         sem = asyncio.Semaphore(8)
         # 设置超时时间为 2 分钟
         timeout = aiohttp.ClientTimeout(total=120)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        # 禁用 SSL 验证的 connector
+        connector = aiohttp.TCPConnector(limit=64, ssl=False)
+        async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
             headers = {
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
                 'Accept-Encoding': 'gzip, deflate',
@@ -132,76 +158,86 @@ async def download_m3u8_and_key_file(message, save_file):
                         'Upgrade-Insecure-Requests': '1',
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
                     }
-                    async with session.get(url, headers=headers) as response:
-                        # 获取到请求参数
-                        text = await response.text()
-                        pattern = r'^.*\n(.*\.m3u8)$'
-                        match = re.search(pattern, text, re.MULTILINE)
-                        if match:
-                            last_line = match.group(1)
-                            m3u8_url = uri + last_line
-                            print('m3u8_url', m3u8_url)  # 打印结果
-                            parsed_url = urlparse(m3u8_url)
-                            path = parsed_url.path
-                            filename = os.path.basename(path)
-                            uri2 = m3u8_url.replace(filename, "")
-                            # 下载m3u8
-                            m3u8_save_path = f"{save_file}{num}.m3u8"
-                            await download_file(session, m3u8_url, m3u8_save_path, headers)
-                            print("m3u8下载完毕")
-                            async with aiofiles.open(m3u8_save_path, 'r') as file:
-                                m3u8_content = await file.read()
-                                # 判断m3u8文件中是否有key
-                                pattern = r"\/.*?\.key"
-                                matches = re.findall(pattern, m3u8_content)
-                                if matches:
-                                    key_url = uri + matches[0]
-                                    key_save_path = f"{save_file}{num}.key"
-                                    await download_file(session, key_url, key_save_path, headers)
-                                    print("key下载完毕")
-                                    # 替换key文件
-                                    key_save_path = key_save_path.replace("\\", "\\\\")  # 将单反斜杠替换为双反斜杠
-                                    m3u8_content = m3u8_content.replace(matches[0], key_save_path)
-                            pattern = r'^.*\n(.*\.ts)$'
-                            video_urls = re.findall(pattern, m3u8_content, re.MULTILINE)
-                            print("url", uri)
-                            print("video_url：", video_urls[0])
-                            if flag:
-                                replaced_content = m3u8_content
-                                for i, v in enumerate(video_urls):
-                                    replaced_content = replaced_content.replace(v, f"{save_file}{num}_{v}")
-                                    video_urls[i] = uri2 + v
-                            else:
-                                base_url = video_urls[0][:video_urls[0].rindex('/') + 1]
-                                replaced_content = m3u8_content.replace(base_url, f"{save_file}{num}_")
-                                for i, v in enumerate(video_urls):
-                                    video_urls[i] = uri + v
-                            # 替换m3u8文件
-                            async with aiofiles.open(m3u8_save_path, 'w', encoding='utf-8') as file:
-                                await file.write(replaced_content)
-                            # 创建并发任务
-                            tasks = []
-                            for i, video_url in enumerate(video_urls):
-                                task = download_video_segment(session, num, video_url, save_file, sem)
-                                tasks.append(task)
+                    retry_count = 5
+                    while retry_count > 0:
+                        proxy = await get_proxy()
+                        try:
+                            async with session.get(url, headers=headers, proxy="http://{}".format(proxy)) as response:
+                                # async with session.get(url, headers=headers) as response:
+                                # 获取到请求参数
+                                text = await response.text()
+                                break
+                        except Exception:
+                            retry_count -= 1
 
-                            await asyncio.gather(*tasks)
-                            print("视频下载完毕")
-                            folder_path = f"{save_file}动漫-大陆\\{title}\\{season}\\"
-                            ouput_path = f'"{folder_path}{detail_title}.mp4"'
-                            try:
-                                Path(folder_path).mkdir(parents=True, exist_ok=False)
-                                print("文件夹创建成功！")
-                                command = f'ffmpeg -allowed_extensions ALL -protocol_whitelist "file,http,crypto,tcp" -i {m3u8_save_path} -c copy {ouput_path}'
-                            except FileExistsError:
-                                command = f'ffmpeg -allowed_extensions ALL -protocol_whitelist "file,http,crypto,tcp" -i {m3u8_save_path} -c copy {ouput_path}'
-                            except Exception as e:
-                                print("文件夹创建失败:", e)
-
-                            # 执行命令行命令
-                            subprocess.run(command, shell=True, stdout=subprocess.DEVNULL)
+                    pattern = r'^.*\n(.*\.m3u8)$'
+                    match = re.search(pattern, text, re.MULTILINE)
+                    if match:
+                        last_line = match.group(1)
+                        m3u8_url = uri + last_line
+                        print('m3u8_url', m3u8_url)  # 打印结果
+                        parsed_url = urlparse(m3u8_url)
+                        path = parsed_url.path
+                        filename = os.path.basename(path)
+                        uri2 = m3u8_url.replace(filename, "")
+                        # 下载m3u8
+                        m3u8_save_path = f"{save_file}{num}.m3u8"
+                        await download_file(session, m3u8_url, m3u8_save_path, headers)
+                        print("m3u8下载完毕")
+                        async with aiofiles.open(m3u8_save_path, 'r') as file:
+                            m3u8_content = await file.read()
+                            # 判断m3u8文件中是否有key
+                            pattern = r"\/.*?\.key"
+                            matches = re.findall(pattern, m3u8_content)
+                            if matches:
+                                key_url = uri + matches[0]
+                                key_save_path = f"{save_file}{num}.key"
+                                await download_file(session, key_url, key_save_path, headers)
+                                print("key下载完毕")
+                                # 替换key文件
+                                key_save_path = key_save_path.replace("\\", "\\\\")  # 将单反斜杠替换为双反斜杠
+                                m3u8_content = m3u8_content.replace(matches[0], key_save_path)
+                        pattern = r'^.*\n(.*\.ts)$'
+                        video_urls = re.findall(pattern, m3u8_content, re.MULTILINE)
+                        print("url", uri)
+                        print("video_url：", video_urls[0])
+                        if flag:
+                            replaced_content = m3u8_content
+                            for i, v in enumerate(video_urls):
+                                replaced_content = replaced_content.replace(v, f"{save_file}{num}_{v}")
+                                video_urls[i] = uri2 + v
                         else:
-                            print("Config object not found")
+                            base_url = video_urls[0][:video_urls[0].rindex('/') + 1]
+                            replaced_content = m3u8_content.replace(base_url, f"{save_file}{num}_")
+                            for i, v in enumerate(video_urls):
+                                video_urls[i] = uri + v
+                        # 替换m3u8文件
+                        async with aiofiles.open(m3u8_save_path, 'w', encoding='utf-8') as file:
+                            await file.write(replaced_content)
+                        # 创建并发任务
+                        tasks = []
+                        for i, video_url in enumerate(video_urls):
+                            task = download_video_segment(session, num, video_url, save_file, sem)
+                            tasks.append(task)
+
+                        await asyncio.gather(*tasks)
+                        print("视频下载完毕")
+                        folder_path = f"{save_file}动漫-大陆\\{title}\\{season}\\"
+                        ouput_path = f'"{folder_path}{detail_title}.mp4"'
+                        try:
+                            Path(folder_path).mkdir(parents=True, exist_ok=False)
+                            print("文件夹创建成功！")
+                            command = f'ffmpeg -allowed_extensions ALL -protocol_whitelist "file,http,crypto,tcp" -i {m3u8_save_path} -c copy {ouput_path}'
+                        except FileExistsError:
+                            command = f'ffmpeg -allowed_extensions ALL -protocol_whitelist "file,http,crypto,tcp" -i {m3u8_save_path} -c copy {ouput_path}'
+                        except Exception as e:
+                            print("文件夹创建失败:", e)
+
+                        # 执行命令行命令
+                        subprocess.run(command, shell=True, stdout=subprocess.DEVNULL)
+                    else:
+                        print("Config object not found")
+
     except Exception as e:
         print(f"download_m3u8_and_key_file Error in: {e}")
         print("message", message)
@@ -351,6 +387,7 @@ async def main():
     # 计算程序运行时间
     elapsed = end - start
     print(f"程序运行时间为{elapsed}秒")
+
 
 # 使用 asyncio.run() 来运行异步函数
 asyncio.run(main())
